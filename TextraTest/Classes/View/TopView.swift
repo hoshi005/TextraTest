@@ -17,9 +17,9 @@ struct TopView: View {
     var body: some View {
         VStack {
             
-            TextField("翻訳したい文字", text: $viewModel.text)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .border(Color.gray, width: 2)
+//            TextField("翻訳したい文字", text: $viewModel.text)
+//                .textFieldStyle(RoundedBorderTextFieldStyle())
+//                .border(Color.gray, width: 2)
             
             Button(action: {
 //                self.viewModel.fetchTextra(for: "おはようございます")
@@ -27,12 +27,15 @@ struct TopView: View {
             }) {
                 Text("変換処理")
             }
+            .disabled(!viewModel.isEnabled)
+            
             if viewModel.response != nil {
                 Text(viewModel.response!.resultset.result.text)
                     .font(.body)
                     .padding()
             }
         }
+        .onAppear() { self.viewModel.requestRecognizerAuthorization() }
     }
 }
 

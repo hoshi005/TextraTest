@@ -9,11 +9,20 @@
 import Foundation
 import Combine
 import OAuthSwift
+import Speech
 
 final class TopViewModel: ObservableObject {
     
-    @Published var text: String = ""
+    @Published var isEnabled = false
+    @Published var speechText: String = ""
     @Published var response: TextraResponse?
+    
+    
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))!
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private let audioEngine = AVAudioEngine()
+    
     
     private let fetcher: TextraFetcher
     private var requestCancellable: Cancellable? {
@@ -52,6 +61,92 @@ final class TopViewModel: ObservableObject {
 }
 
 extension TopViewModel {
+    
+    /// 音声入力の認証処理.
+    func requestRecognizerAuthorization() {
+        SFSpeechRecognizer.requestAuthorization { authStatus in
+            // メインスレッドで処理したい内容のため、OperationQueue.main.addOperationを使う
+            OperationQueue.main.addOperation { [weak self] in
+                guard let self = self else { return }
+                 
+                switch authStatus {
+                case .authorized:
+                    self.isEnabled = true
+                case .denied:
+                    self.isEnabled = false
+                    self.speechText = "音声認識へのアクセスが拒否されています。"
+                case .restricted:
+                    self.isEnabled = false
+                    self.speechText = "この端末で音声認識はできません。"
+                case .notDetermined:
+                    self.isEnabled = false
+                    self.speechText = "音声認識はまだ許可されていません。"
+                @unknown default:
+                    fatalError()
+                }
+            }
+        }
+    }
+    
+    func startRecording() throws {
+        
+        // 既存タスクがあれば初期化.
+        if let recognitionTask = recognitionTask {
+            recognitionTask.cancel()
+            self.recognitionTask = nil
+        }
+        
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.record)
+        try audioSession.setMode(.measurement)
+        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        
+        let inputNode = audioEngine.inputNode
+        guard let recognitionRequest = recognitionRequest else { fatalError("Unable to created a SFSpeechAudioBufferRecognitionRequest object") }
+        
+        recognitionRequest.shouldReportPartialResults = true
+        
+        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            guard let self = self else { return }
+            var isFinal = false
+            if let result = result {
+                self.speechText = result.bestTranscription.formattedString
+                isFinal = result.isFinal
+            }
+            // エラーがある、もしくは最後の認識結果だった場合の処理
+            if error != nil || isFinal {
+                self.audioEngine.stop()
+                inputNode.removeTap(onBus: 0)
+                 
+                self.recognitionRequest = nil
+                self.recognitionTask = nil
+                 
+                self.isEnabled = true
+            }
+        }
+        
+        // マイクから取得した音声バッファをリクエストに渡す
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { (buffer: AVAudioPCMBuffer, when: AVAudioTime) in
+            self.recognitionRequest?.append(buffer)
+        }
+         
+        try startAudioEngine()
+    }
+    
+    private func startAudioEngine() throws {
+        // startの前にリソースを確保しておく。
+        audioEngine.prepare()
+         
+        try audioEngine.start()
+         
+        speechText = "どうぞ喋ってください。"
+    }
+}
+
+extension TopViewModel {
     func test() {
         
         let oauthswift = OAuth1Swift(
@@ -63,7 +158,7 @@ extension TopViewModel {
             "key": Const.API.key,
             "name": Const.API.name,
             "type": "json",
-            "text": self.text
+            "text": self.speechText
         ]
         
         oauthswift.client.post(
