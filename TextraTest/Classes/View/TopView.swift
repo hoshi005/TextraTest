@@ -17,17 +17,22 @@ struct TopView: View {
     var body: some View {
         VStack {
             
+            Text(viewModel.speechText)
+                .padding()
+            
 //            TextField("翻訳したい文字", text: $viewModel.text)
 //                .textFieldStyle(RoundedBorderTextFieldStyle())
 //                .border(Color.gray, width: 2)
             
             Button(action: {
 //                self.viewModel.fetchTextra(for: "おはようございます")
-                self.viewModel.test()
+//                self.viewModel.test()
+                self.viewModel.tapButton()
             }) {
-                Text("変換処理")
+                Text(self.viewModel.buttonText)
             }
             .disabled(!viewModel.isEnabled)
+            .padding()
             
             if viewModel.response != nil {
                 Text(viewModel.response!.resultset.result.text)

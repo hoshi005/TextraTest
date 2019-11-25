@@ -11,9 +11,10 @@ import Combine
 import OAuthSwift
 import Speech
 
-final class TopViewModel: ObservableObject {
+final class TopViewModel: NSObject, ObservableObject {
     
     @Published var isEnabled = false
+    @Published var buttonText: String = "音声認識を開始する！"
     @Published var speechText: String = ""
     @Published var response: TextraResponse?
     
@@ -31,6 +32,8 @@ final class TopViewModel: ObservableObject {
     
     init(fetcher: TextraFetcher = TextraFetcher()) {
         self.fetcher = fetcher
+        super.init()
+        self.speechRecognizer.delegate = self
     }
     
     deinit {
@@ -60,10 +63,30 @@ final class TopViewModel: ObservableObject {
     }
 }
 
-extension TopViewModel {
+// MARK: - 音声認識関連.
+
+extension TopViewModel: SFSpeechRecognizerDelegate {
+    
+    /// 音声認識の可否が変更された時に呼び出されるdelegateメソッド.
+    /// - Parameters:
+    ///   - speechRecognizer: speechRecognizer.
+    ///   - available: 音声認識の可否.
+    func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer, availabilityDidChange available: Bool) {
+        print(#function)
+        
+        if available {
+            self.isEnabled = true
+            self.buttonText = "音声認識を開始する！！"
+        } else {
+            self.isEnabled = false
+            self.buttonText = "やめる！"
+        }
+    }
     
     /// 音声入力の認証処理.
     func requestRecognizerAuthorization() {
+        print(#function)
+        
         SFSpeechRecognizer.requestAuthorization { authStatus in
             // メインスレッドで処理したい内容のため、OperationQueue.main.addOperationを使う
             OperationQueue.main.addOperation { [weak self] in
@@ -88,7 +111,9 @@ extension TopViewModel {
         }
     }
     
+    /// 音声認識の処理.
     func startRecording() throws {
+        print(#function)
         
         // 既存タスクがあれば初期化.
         if let recognitionTask = recognitionTask {
@@ -110,11 +135,14 @@ extension TopViewModel {
         
         recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self = self else { return }
+            
             var isFinal = false
             if let result = result {
                 self.speechText = result.bestTranscription.formattedString
                 isFinal = result.isFinal
+                self.test()
             }
+            
             // エラーがある、もしくは最後の認識結果だった場合の処理
             if error != nil || isFinal {
                 self.audioEngine.stop()
@@ -124,6 +152,7 @@ extension TopViewModel {
                 self.recognitionTask = nil
                  
                 self.isEnabled = true
+                self.buttonText = "音声認識を開始する！！！"
             }
         }
         
@@ -137,14 +166,32 @@ extension TopViewModel {
     }
     
     private func startAudioEngine() throws {
+        print(#function)
+        
         // startの前にリソースを確保しておく。
         audioEngine.prepare()
          
         try audioEngine.start()
          
-        speechText = "どうぞ喋ってください。"
+        speechText = "(どうぞ喋ってください)"
+    }
+    
+    func tapButton() {
+        print(#function)
+        
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            recognitionRequest?.endAudio()
+            self.isEnabled = false
+            self.buttonText = "停止中！！"
+        } else {
+            try! startRecording()
+            self.buttonText = "音声認識をこの辺にしておく！"
+        }
     }
 }
+
+// MARK: - 翻訳API関連.
 
 extension TopViewModel {
     func test() {
